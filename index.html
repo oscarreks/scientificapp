@@ -13,9 +13,9 @@
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <style>
 @font-face {
-  font-family: "Mulish";
-  src: url("fonts/mulish.woff2") format("woff2");
-  font-weight: 200 1000;
+  font-family: "Lexend";
+  src: url("fonts/lexend.woff2") format("woff2");
+  font-weight: 100 900;
   font-display: swap;
 }
 :root {
@@ -27,12 +27,12 @@
   --op: #f07f8f;
   --gray: #707077;
   --dim: #3a3a40;
-  --font: "Mulish", "Avenir Next", "Helvetica Neue", system-ui, sans-serif;
+  --font: "Lexend", "Avenir Next", "Helvetica Neue", system-ui, sans-serif;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body {
   margin: 0; height: 100%; background: var(--bg); color: var(--blue);
-  font-family: var(--font); font-weight: 300;
+  font-family: var(--font); font-weight: 200;
   overscroll-behavior: none; overflow: hidden;
   -webkit-user-select: none; user-select: none; touch-action: manipulation;
 }
@@ -52,7 +52,7 @@ html, body {
   font-size: 12px; letter-spacing: .14em; color: var(--dim); padding: 4px 6px;
 }
 #history {
-  font-weight: 260;
+  font-weight: 200;
   height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch;
   padding: 18px 22px 24px; font-size: clamp(26px, 8.2vw, 36px);
   overscroll-behavior: contain; scrollbar-width: none;
@@ -68,9 +68,9 @@ html, body {
 .flash { animation: flash .35s ease-out; }
 @keyframes flash { from { opacity: .35; } to { opacity: 1; } }
 
-#active { min-height: 1.35em; }
+#active { min-height: 1.35em; cursor: text; padding-bottom: .15em; }
 .cursor {
-  display: inline-block; width: 2px; height: 1.15em; margin-left: 1px;
+  display: inline-block; width: 2px; height: 1.15em; margin: 0 1px;
   background: var(--blue); vertical-align: -0.2em; animation: blink 1.1s steps(1) infinite;
 }
 @keyframes blink { 50% { opacity: 0; } }
@@ -88,7 +88,7 @@ html, body {
 }
 .key {
   position: relative; border: 0; background: none; padding: 0; margin: 0;
-  font: inherit; font-weight: 300; color: var(--blue);
+  font: inherit; font-weight: 200; color: var(--blue);
   font-size: clamp(26px, 8.4vw, 36px); cursor: pointer; outline: none;
   display: flex; align-items: center; justify-content: center;
 }
@@ -116,7 +116,7 @@ body.shifted .key.fn.has-alt span { font-size: .78em; }
 }
 #settings.open { transform: none; }
 .s-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 26px; }
-.s-head h1 { font-weight: 300; font-size: 28px; margin: 0; color: var(--blue); }
+.s-head h1 { font-weight: 200; font-size: 28px; margin: 0; color: var(--blue); }
 .s-btn { background: none; border: 0; color: var(--pink); font: inherit; font-size: 19px; padding: 8px 4px; cursor: pointer; }
 .row { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; border-bottom: 1px solid #222228; font-size: 18px; color: #c9d4dc; }
 .row small { display: block; color: var(--gray); font-size: 14px; margin-top: 4px; }
@@ -152,9 +152,11 @@ body.shifted .key.fn.has-alt span { font-size: .78em; }
     <div class="seg" id="s-angle"><button data-v="deg">Degrees</button><button data-v="rad">Radians</button></div></div>
   <div class="row"><div>Haptic feedback<small>Short vibration on key press</small></div>
     <button class="toggle" id="s-haptic" aria-label="Haptic feedback"></button></div>
+  <div class="row"><div>Live answer<small>Show a faint result while typing</small></div>
+    <button class="toggle" id="s-preview" aria-label="Live answer"></button></div>
   <div class="placeholder"><b>Appearance</b>Font, text size and colour options are coming in a later version.</div>
   <button class="danger" id="s-clear">Clear history</button>
-  <div class="foot">Calc · v0.1 draft</div>
+  <div class="foot">Calc · v0.2 draft</div>
 </div>
 
 <script>
@@ -314,8 +316,9 @@ const store = {
 };
 
 let hist = store.get("calc.history", []);
-let settings = Object.assign({ angle: "deg", haptic: true }, store.get("calc.settings", {}));
+let settings = Object.assign({ angle: "deg", haptic: true, preview: false }, store.get("calc.settings", {}));
 let line = [];
+let cur = 0;            // cursor position: index in line where the next token goes
 let shift = false;
 
 const LABEL = {
@@ -338,16 +341,19 @@ function renderEntries() {
     `<div class="result" data-i="${i}">${h.result.replace("E", '<span class="t-e">E</span>')}</div></div>`
   ).join("");
 }
-function renderLine() {
-  $("active").innerHTML = exprHTML(line) + '<span class="cursor"></span>';
+function renderLine(scroll) {
+  cur = Math.max(0, Math.min(cur, line.length));
+  const parts = line.map((t, i) => `<span class="tok" data-k="${i}">${tokenHTML(t)}</span>`);
+  parts.splice(cur, 0, '<span class="cursor"></span>');
+  $("active").innerHTML = parts.join("");
   const pv = $("preview");
   pv.className = "";
   pv.textContent = "";
-  // Show a faint live result once there's more than a bare number
-  if (line.length && line.some(t => !Engine.isDigit(t) && t !== ".")) {
+  // Optional faint live result (off by default; see Settings)
+  if (settings.preview && line.length && line.some(t => !Engine.isDigit(t) && t !== ".")) {
     try { pv.textContent = Engine.format(Engine.evaluate(line, settings.angle)); } catch {}
   }
-  scrollDown();
+  if (scroll !== false) scrollDown();
 }
 function scrollDown() { const h = $("history"); h.scrollTop = h.scrollHeight; }
 function renderMode() { $("mode").textContent = settings.angle.toUpperCase(); }
@@ -356,32 +362,40 @@ function renderMode() { $("mode").textContent = settings.angle.toUpperCase(); }
 function lastResultTokens() {
   return hist.length ? Engine.toTokens(hist[hist.length - 1].result) : null;
 }
+const isNumTok = t => t && (Engine.isDigit(t) || t === ".");
+// Put tokens at the cursor and move the cursor past them
+function put(tokens) { line.splice(cur, 0, ...tokens); cur += tokens.length; }
+
 function insert(tokens) {
-  const last = line[line.length - 1];
   const first = tokens[0];
   // Operators on an empty line continue from the previous answer
   if (!line.length && ["+", "×", "÷", "^", "−"].includes(first)) {
     const prev = lastResultTokens();
-    if (prev) line.push(...prev);
-    else if (first === "−") { line.push("neg"); return; }
+    if (prev) put(prev);
+    else if (first === "−") { put(["neg"]); return; }
   }
+  const before = line[cur - 1];
   if (first === ".") {
-    // ignore a second decimal point in the same number
-    for (let i = line.length - 1; i >= 0 && (Engine.isDigit(line[i]) || line[i] === "."); i--)
-      if (line[i] === ".") return;
-    if (!Engine.isDigit(last)) line.push("0");
+    // ignore a second decimal point in the same number (look both sides of the cursor)
+    for (let i = cur - 1; i >= 0 && isNumTok(line[i]); i--) if (line[i] === ".") return;
+    for (let i = cur; i < line.length && isNumTok(line[i]); i++) if (line[i] === ".") return;
+    if (!Engine.isDigit(before)) put(["0"]);
   }
-  // Digits typed straight after a pasted value or a constant get an explicit ×
-  if (Engine.isDigit(first) && (last === ")" || last === "π" || last === "e")) line.push("×");
-  line.push(...tokens);
+  // Digits typed straight after a ")" or a constant get an explicit ×
+  if (Engine.isDigit(first) && (before === ")" || before === "π" || before === "e")) put(["×"]);
+  put(tokens);
 }
-function insertValue(tokens) {           // inserting a previous result
-  const last = line[line.length - 1];
-  if (isValueEnd(last)) line.push("×");
-  line.push(...tokens);
+// Insert a previous result or expression at the cursor, keeping it separate
+// from neighbouring numbers.
+function insertValue(tokens, wrap) {
+  if (!tokens.length) return;
+  if (wrap) tokens = ["(", ...tokens, ")"];
+  if (isValueEnd(line[cur - 1])) put(["×"]);
+  put(tokens);
+  if (isNumTok(line[cur]) && isValueEnd(tokens[tokens.length - 1])) line.splice(cur, 0, "×");
 }
-function backspace() { line.pop(); }
-function clearLine() { line = []; }
+function backspace() { if (cur > 0) { line.splice(cur - 1, 1); cur--; } }
+function clearLine() { line = []; cur = 0; }
 
 function equals() {
   if (!line.length) return;
@@ -391,7 +405,7 @@ function equals() {
     hist.push({ tokens: closed, result: Engine.format(v) });
     if (hist.length > 300) hist = hist.slice(-300);
     store.set("calc.history", hist);
-    line = [];
+    clearLine();
     renderEntries();
     const res = $("entries").lastElementChild.querySelector(".result");
     res.classList.add("flash");
@@ -487,7 +501,38 @@ function press(d) {
 $("entries").addEventListener("click", e => {
   const r = e.target.closest(".result"), x = e.target.closest(".expr");
   if (r) { insertValue(Engine.toTokens(hist[r.dataset.i].result)); renderLine(); }
-  else if (x) { line = hist[x.dataset.i].tokens.slice(); renderLine(); }
+  else if (x) {
+    // Bracket the expression when it joins other input, so it keeps its own meaning
+    const t = hist[x.dataset.i].tokens.slice();
+    const simple = t.every(isNumTok);
+    insertValue(t, line.length > 0 && !simple);
+    renderLine();
+  }
+});
+
+/* ---------- tap the current line to move the cursor ---------- */
+$("active").addEventListener("click", e => {
+  const tok = e.target.closest(".tok");
+  if (tok) {
+    const r = tok.getBoundingClientRect();
+    const k = +tok.dataset.k;
+    cur = e.clientX < r.left + r.width / 2 ? k : k + 1;
+  } else {
+    // Tapped empty space: find the nearest gap between tokens on the tapped row
+    const toks = [...$("active").querySelectorAll(".tok")];
+    let best = line.length, bestD = Infinity;
+    toks.forEach(el => {
+      const r = el.getBoundingClientRect();
+      if (e.clientY < r.top || e.clientY > r.bottom) return;
+      const k = +el.dataset.k;
+      for (const [x, pos] of [[r.left, k], [r.right, k + 1]]) {
+        const d = Math.abs(e.clientX - x);
+        if (d < bestD) { bestD = d; best = pos; }
+      }
+    });
+    cur = best;
+  }
+  renderLine(false);
 });
 
 /* ---------- physical keyboard (handy on desktop) ---------- */
@@ -499,6 +544,10 @@ document.addEventListener("keydown", e => {
   else if (e.key === "Enter" || e.key === "=") { e.preventDefault(); equals(); }
   else if (e.key === "Backspace") backspace();
   else if (e.key === "Escape") clearLine();
+  else if (e.key === "ArrowLeft") cur--;
+  else if (e.key === "ArrowRight") cur++;
+  else if (e.key === "Home") cur = 0;
+  else if (e.key === "End") cur = line.length;
   else return;
   renderLine();
 });
@@ -509,6 +558,7 @@ function closeSettings() { $("settings").classList.remove("open"); $("settings")
 function syncSettings() {
   $("s-angle").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.v === settings.angle));
   $("s-haptic").classList.toggle("on", settings.haptic);
+  $("s-preview").classList.toggle("on", settings.preview);
   renderMode();
 }
 function saveSettings() { store.set("calc.settings", settings); syncSettings(); renderLine(); }
@@ -517,6 +567,7 @@ function clearHistory() { hist = []; store.set("calc.history", hist); renderEntr
 $("s-done").onclick = () => { if (window.history.state && window.history.state.s) window.history.back(); else closeSettings(); };
 $("s-angle").onclick = e => { const v = e.target.dataset.v; if (v) { settings.angle = v; saveSettings(); } };
 $("s-haptic").onclick = () => { settings.haptic = !settings.haptic; saveSettings(); };
+$("s-preview").onclick = () => { settings.preview = !settings.preview; saveSettings(); };
 $("s-clear").onclick = () => { if (confirm("Clear all history?")) { clearHistory(); $("s-done").click(); } };
 $("mode").onclick = () => { settings.angle = settings.angle === "deg" ? "rad" : "deg"; saveSettings(); };
 window.addEventListener("popstate", closeSettings);
