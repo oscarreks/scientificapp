@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0b0b0d">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Calc</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+@font-face {
+  font-family: "Mulish";
+  src: url("fonts/mulish.woff2") format("woff2");
+  font-weight: 200 1000;
+  font-display: swap;
+}
+:root {
+  --bg: #0b0b0d;
+  --display: #121216;
+  --keypad: #19191c;
+  --blue: #8ccaf0;
+  --pink: #f294da;
+  --op: #f07f8f;
+  --gray: #707077;
+  --dim: #3a3a40;
+  --font: "Mulish", "Avenir Next", "Helvetica Neue", system-ui, sans-serif;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  margin: 0; height: 100%; background: var(--bg); color: var(--blue);
+  font-family: var(--font); font-weight: 300;
+  overscroll-behavior: none; overflow: hidden;
+  -webkit-user-select: none; user-select: none; touch-action: manipulation;
+}
+#app {
+  height: 100vh; height: 100dvh; max-width: 520px; margin: 0 auto;
+  display: flex; flex-direction: column;
+  padding-top: env(safe-area-inset-top);
+}
+
+/* ---------- Display / history ---------- */
+#display {
+  position: relative; flex: 1; min-height: 0;
+  background: var(--display); border-radius: 22px 22px 0 0; margin-top: 6px;
+}
+#mode {
+  position: absolute; top: 10px; right: 18px; z-index: 2;
+  font-size: 12px; letter-spacing: .14em; color: var(--dim); padding: 4px 6px;
+}
+#history {
+  font-weight: 260;
+  height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 18px 22px 24px; font-size: clamp(26px, 8.2vw, 36px);
+  overscroll-behavior: contain; scrollbar-width: none;
+}
+#history::-webkit-scrollbar { display: none; }
+.entry { margin-bottom: .55em; }
+.expr, .line { word-break: break-all; line-height: 1.35; }
+.expr { cursor: pointer; }
+.result { text-align: right; color: var(--pink); margin-top: .6em; line-height: 1.35; cursor: pointer; word-break: break-all; }
+.result.err { color: var(--op); }
+.t-op { color: var(--op); }
+.t-e { font-size: .7em; }
+.flash { animation: flash .35s ease-out; }
+@keyframes flash { from { opacity: .35; } to { opacity: 1; } }
+
+#active { min-height: 1.35em; }
+.cursor {
+  display: inline-block; width: 2px; height: 1.15em; margin-left: 1px;
+  background: var(--blue); vertical-align: -0.2em; animation: blink 1.1s steps(1) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+#preview { text-align: right; color: var(--pink); opacity: .4; min-height: 1.35em; margin-top: .3em; line-height: 1.35; word-break: break-all; }
+#preview.err { color: var(--op); opacity: .7; }
+.shake { animation: shake .3s; }
+@keyframes shake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+
+/* ---------- Keypad ---------- */
+#keypad {
+  background: var(--keypad);
+  display: grid; grid-template-columns: repeat(5, 1fr); grid-template-rows: repeat(6, 1fr);
+  height: min(54vh, 470px); height: min(54dvh, 470px);
+  padding: 8px 10px calc(10px + env(safe-area-inset-bottom));
+}
+.key {
+  position: relative; border: 0; background: none; padding: 0; margin: 0;
+  font: inherit; font-weight: 300; color: var(--blue);
+  font-size: clamp(26px, 8.4vw, 36px); cursor: pointer; outline: none;
+  display: flex; align-items: center; justify-content: center;
+}
+.key::before {
+  content: ""; position: absolute; width: min(64px, 78%); aspect-ratio: 1; border-radius: 50%;
+  background: rgba(255,255,255,.08); opacity: 0; transform: scale(.7);
+  transition: opacity .25s, transform .25s;
+}
+.key.down::before { opacity: 1; transform: scale(1); transition: none; }
+.key span { position: relative; }
+.key.fn { color: var(--gray); font-size: clamp(24px, 7.6vw, 33px); }
+.key.op { color: var(--op); }
+.key.small { font-size: clamp(22px, 6.6vw, 28px); }
+.key svg { position: relative; width: 34px; height: 34px; stroke: var(--blue); fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.key.shift-on svg { fill: var(--blue); }
+body.shifted .key.has-alt span { color: var(--blue); }
+body.shifted .key.fn.has-alt span { font-size: .78em; }
+
+/* ---------- Settings ---------- */
+#settings {
+  position: fixed; inset: 0; background: var(--display); z-index: 10;
+  transform: translateY(100%); transition: transform .28s ease;
+  padding: calc(env(safe-area-inset-top) + 14px) 22px calc(env(safe-area-inset-bottom) + 20px);
+  display: flex; flex-direction: column; max-width: 520px; margin: 0 auto;
+}
+#settings.open { transform: none; }
+.s-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 26px; }
+.s-head h1 { font-weight: 300; font-size: 28px; margin: 0; color: var(--blue); }
+.s-btn { background: none; border: 0; color: var(--pink); font: inherit; font-size: 19px; padding: 8px 4px; cursor: pointer; }
+.row { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; border-bottom: 1px solid #222228; font-size: 18px; color: #c9d4dc; }
+.row small { display: block; color: var(--gray); font-size: 14px; margin-top: 4px; }
+.seg { display: flex; border: 1px solid #2c2c33; border-radius: 10px; overflow: hidden; }
+.seg button { background: none; border: 0; color: var(--gray); font: inherit; font-size: 15px; padding: 8px 14px; cursor: pointer; }
+.seg button.on { background: #24242a; color: var(--blue); }
+.toggle { width: 50px; height: 30px; border-radius: 15px; background: #2c2c33; border: 0; position: relative; cursor: pointer; transition: background .2s; }
+.toggle::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #9a9aa2; transition: transform .2s, background .2s; }
+.toggle.on { background: #2a4a5e; }
+.toggle.on::after { transform: translateX(20px); background: var(--blue); }
+.placeholder { margin-top: 26px; padding: 18px; border: 1px dashed #2c2c33; border-radius: 14px; color: var(--gray); font-size: 15px; line-height: 1.5; }
+.placeholder b { display: block; font-weight: 400; color: #c9d4dc; font-size: 17px; margin-bottom: 4px; }
+.danger { margin-top: 26px; background: none; border: 1px solid #3a2a2e; color: var(--op); font: inherit; font-size: 17px; padding: 14px; border-radius: 12px; cursor: pointer; }
+.foot { margin-top: auto; color: var(--dim); font-size: 13px; text-align: center; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="display">
+    <div id="mode">DEG</div>
+    <div id="history">
+      <div id="entries"></div>
+      <div id="active" class="line"></div>
+      <div id="preview"></div>
+    </div>
+  </div>
+  <div id="keypad"></div>
+</div>
+
+<div id="settings" aria-hidden="true">
+  <div class="s-head"><h1>Settings</h1><button class="s-btn" id="s-done">Done</button></div>
+  <div class="row"><div>Angle unit</div>
+    <div class="seg" id="s-angle"><button data-v="deg">Degrees</button><button data-v="rad">Radians</button></div></div>
+  <div class="row"><div>Haptic feedback<small>Short vibration on key press</small></div>
+    <button class="toggle" id="s-haptic" aria-label="Haptic feedback"></button></div>
+  <div class="placeholder"><b>Appearance</b>Font, text size and colour options are coming in a later version.</div>
+  <button class="danger" id="s-clear">Clear history</button>
+  <div class="foot">Calc · v0.1 draft</div>
+</div>
+
+<script>
+/* =====================================================================
+   ENGINE — tokens in, number out. No eval().
+   An expression is an array of tokens such as ["1","2","×","sin(","3","0",")"].
+   ===================================================================== */
+const Engine = (() => {
+  const FUNCS = ["sin(", "cos(", "tan(", "asin(", "acos(", "atan(", "log(", "ln(", "√("];
+  const isDigit = t => t.length === 1 && t >= "0" && t <= "9";
+
+  function lex(tokens) {
+    const out = [];
+    let i = 0;
+    while (i < tokens.length) {
+      const t = tokens[i];
+      if (isDigit(t) || t === ".") {
+        let s = "", dots = 0;
+        while (i < tokens.length && (isDigit(tokens[i]) || tokens[i] === ".")) {
+          if (tokens[i] === ".") dots++;
+          s += tokens[i++];
+        }
+        if (dots > 1 || s === ".") throw new Error("syntax");
+        if (tokens[i] === "E") {
+          i++;
+          let sign = "";
+          if (tokens[i] === "neg" || tokens[i] === "−") { sign = "-"; i++; }
+          else if (tokens[i] === "+") i++;
+          let ex = "";
+          while (i < tokens.length && isDigit(tokens[i])) ex += tokens[i++];
+          if (!ex) throw new Error("syntax");
+          s += "e" + sign + ex;
+        }
+        out.push({ t: "num", v: parseFloat(s) });
+        continue;
+      }
+      if (t === "π") out.push({ t: "num", v: Math.PI });
+      else if (t === "e") out.push({ t: "num", v: Math.E });
+      else if (t === "neg") out.push({ t: "neg" });
+      else if ("+−×÷^".includes(t)) out.push({ t: "op", v: t });
+      else if (t === "(" || t === ")") out.push({ t });
+      else if (FUNCS.includes(t)) { out.push({ t: "fn", v: t.slice(0, -1) }); out.push({ t: "(" }); }
+      else throw new Error("syntax");
+      i++;
+    }
+    return out;
+  }
+
+  function evaluate(tokens, angle) {
+    const L = lex(tokens);
+    if (!L.length) throw new Error("empty");
+    let p = 0;
+    const peek = () => L[p];
+    const isOp = (v) => peek() && peek().t === "op" && peek().v === v;
+    const startsPrimary = () => peek() && (peek().t === "num" || peek().t === "fn" || peek().t === "(");
+
+    function expr() {
+      let v = term();
+      while (isOp("+") || isOp("−")) {
+        const o = L[p++].v; const r = term();
+        v = o === "+" ? v + r : v - r;
+      }
+      return v;
+    }
+    function term() {
+      let v = unary();
+      for (;;) {
+        if (isOp("×")) { p++; v *= unary(); }
+        else if (isOp("÷")) { p++; v /= unary(); }
+        else if (startsPrimary()) v *= power();          // implicit: 2π, 3(4), )(
+        else return v;
+      }
+    }
+    function unary() {
+      if (peek() && peek().t === "neg") { p++; return -unary(); }
+      return power();
+    }
+    function power() {
+      const b = primary();
+      if (isOp("^")) { p++; return Math.pow(b, unary()); }   // right-assoc, -2^2 = -4
+      return b;
+    }
+    function closeParen() {               // missing ")" at the end are auto-closed
+      if (peek() && peek().t === ")") p++;
+      else if (peek()) throw new Error("syntax");
+    }
+    function primary() {
+      const k = peek();
+      if (!k) throw new Error("syntax");
+      if (k.t === "num") { p++; return k.v; }
+      if (k.t === "(") { p++; const v = expr(); closeParen(); return v; }
+      if (k.t === "fn") { p += 2; const v = expr(); closeParen(); return applyFn(k.v, v, angle); }
+      throw new Error("syntax");
+    }
+
+    const v = expr();
+    if (p < L.length) throw new Error("syntax");
+    if (!isFinite(v)) throw new Error("math");
+    return v;
+  }
+
+  const snap = x => (Math.abs(x) < 1e-14 ? 0 : x);
+  function sinDeg(x) {
+    const r = ((x % 360) + 360) % 360;
+    const exact = { 0: 0, 30: .5, 90: 1, 150: .5, 180: 0, 210: -.5, 270: -1, 330: -.5 };
+    return r in exact ? exact[r] : Math.sin(x * Math.PI / 180);
+  }
+  function tanDeg(x) {
+    const r = ((x % 180) + 180) % 180;
+    if (r === 0) return 0; if (r === 45) return 1; if (r === 135) return -1; if (r === 90) return NaN;
+    return Math.tan(x * Math.PI / 180);
+  }
+  function applyFn(f, x, angle) {
+    const deg = angle === "deg", toDeg = 180 / Math.PI;
+    switch (f) {
+      case "sin": return deg ? sinDeg(x) : snap(Math.sin(x));
+      case "cos": return deg ? sinDeg(x + 90) : snap(Math.cos(x));
+      case "tan": return deg ? tanDeg(x) : snap(Math.tan(x));
+      case "asin": return Math.asin(x) * (deg ? toDeg : 1);
+      case "acos": return Math.acos(x) * (deg ? toDeg : 1);
+      case "atan": return Math.atan(x) * (deg ? toDeg : 1);
+      case "log": return Math.log10(x);
+      case "ln": return Math.log(x);
+      case "√": return Math.sqrt(x);
+    }
+    throw new Error("syntax");
+  }
+
+  function format(x) {
+    if (Object.is(x, -0)) x = 0;
+    const r = Number(x.toPrecision(12));
+    if (r === 0) return "0";
+    const a = Math.abs(r);
+    if (a >= 1e15 || a < 1e-6) {
+      const [m, e] = r.toExponential().split("e");
+      return m + "E" + Number(e);
+    }
+    return String(r);
+  }
+
+  // Turn a formatted result back into tokens, e.g. "-1.5E-7" → neg 1 . 5 E neg 7
+  const toTokens = s => [...s].map(c => (c === "-" ? "neg" : c));
+
+  // How many "(" are still open (function tokens open one each)
+  const openCount = tokens => tokens.reduce((n, t) => n + (t.endsWith("(") ? 1 : t === ")" ? -1 : 0), 0);
+
+  return { evaluate, format, toTokens, openCount, isDigit };
+})();
+
+/* =====================================================================
+   APP
+   ===================================================================== */
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+
+let hist = store.get("calc.history", []);
+let settings = Object.assign({ angle: "deg", haptic: true }, store.get("calc.settings", {}));
+let line = [];
+let shift = false;
+
+const LABEL = {
+  "neg": "-", "÷": "/", "asin(": "sin⁻¹(", "acos(": "cos⁻¹(", "atan(": "tan⁻¹(", "E": "E",
+};
+const isValueEnd = t => t && (Engine.isDigit(t) || t === "." || t === ")" || t === "π" || t === "e");
+
+function tokenHTML(t) {
+  const txt = LABEL[t] ?? t;
+  if ("+−×÷^".includes(t) && t.length === 1) return `<span class="t-op">${txt}</span>`;
+  if (t === "E") return `<span class="t-e">E</span>`;
+  return txt;
+}
+const exprHTML = tokens => tokens.map(tokenHTML).join("");
+
+/* ---------- rendering ---------- */
+function renderEntries() {
+  $("entries").innerHTML = hist.map((h, i) =>
+    `<div class="entry"><div class="expr" data-i="${i}">${exprHTML(h.tokens)}</div>` +
+    `<div class="result" data-i="${i}">${h.result.replace("E", '<span class="t-e">E</span>')}</div></div>`
+  ).join("");
+}
+function renderLine() {
+  $("active").innerHTML = exprHTML(line) + '<span class="cursor"></span>';
+  const pv = $("preview");
+  pv.className = "";
+  pv.textContent = "";
+  // Show a faint live result once there's more than a bare number
+  if (line.length && line.some(t => !Engine.isDigit(t) && t !== ".")) {
+    try { pv.textContent = Engine.format(Engine.evaluate(line, settings.angle)); } catch {}
+  }
+  scrollDown();
+}
+function scrollDown() { const h = $("history"); h.scrollTop = h.scrollHeight; }
+function renderMode() { $("mode").textContent = settings.angle.toUpperCase(); }
+
+/* ---------- editing ---------- */
+function lastResultTokens() {
+  return hist.length ? Engine.toTokens(hist[hist.length - 1].result) : null;
+}
+function insert(tokens) {
+  const last = line[line.length - 1];
+  const first = tokens[0];
+  // Operators on an empty line continue from the previous answer
+  if (!line.length && ["+", "×", "÷", "^", "−"].includes(first)) {
+    const prev = lastResultTokens();
+    if (prev) line.push(...prev);
+    else if (first === "−") { line.push("neg"); return; }
+  }
+  if (first === ".") {
+    // ignore a second decimal point in the same number
+    for (let i = line.length - 1; i >= 0 && (Engine.isDigit(line[i]) || line[i] === "."); i--)
+      if (line[i] === ".") return;
+    if (!Engine.isDigit(last)) line.push("0");
+  }
+  // Digits typed straight after a pasted value or a constant get an explicit ×
+  if (Engine.isDigit(first) && (last === ")" || last === "π" || last === "e")) line.push("×");
+  line.push(...tokens);
+}
+function insertValue(tokens) {           // inserting a previous result
+  const last = line[line.length - 1];
+  if (isValueEnd(last)) line.push("×");
+  line.push(...tokens);
+}
+function backspace() { line.pop(); }
+function clearLine() { line = []; }
+
+function equals() {
+  if (!line.length) return;
+  const closed = line.concat(Array(Math.max(0, Engine.openCount(line))).fill(")"));
+  try {
+    const v = Engine.evaluate(closed, settings.angle);
+    hist.push({ tokens: closed, result: Engine.format(v) });
+    if (hist.length > 300) hist = hist.slice(-300);
+    store.set("calc.history", hist);
+    line = [];
+    renderEntries();
+    const res = $("entries").lastElementChild.querySelector(".result");
+    res.classList.add("flash");
+  } catch (e) {
+    const pv = $("preview");
+    pv.className = "err";
+    pv.textContent = e.message === "math" ? "Undefined" : "Syntax error";
+    const a = $("active");
+    a.classList.remove("shake"); void a.offsetWidth; a.classList.add("shake");
+    scrollDown();
+    return;
+  }
+  renderLine();
+}
+
+/* ---------- keypad ---------- */
+const ICON = {
+  sliders: '<svg viewBox="0 0 32 32"><line x1="4" y1="11" x2="28" y2="11"/><line x1="4" y1="21" x2="28" y2="21"/><circle cx="19" cy="11" r="3" fill="var(--keypad)"/><circle cx="12" cy="21" r="3" fill="var(--keypad)"/></svg>',
+  shift: '<svg viewBox="0 0 32 32"><path d="M16 5 L27 16 H21 V27 H11 V16 H5 Z"/></svg>',
+};
+// [label, tokens, class, shiftedLabel, shiftedTokens]
+const KEYS = [
+  [["@sliders", "SETTINGS", ""], ["sin", ["sin("], "fn", "sin⁻¹", ["asin("]], ["cos", ["cos("], "fn", "cos⁻¹", ["acos("]], ["tan", ["tan("], "fn", "tan⁻¹", ["atan("]], ["C", "BACK", "small", "AC", "CLEARALL"]],
+  [["√", ["√("], "fn", "x²", ["^", "2"]], ["(", ["("], "fn"], [")", [")"], "fn"], ["^", ["^"], "fn small"], ["÷", ["÷"], "op"]],
+  [["log", ["log("], "fn", "10ˣ", ["1", "0", "^", "("]], ["7", ["7"]], ["8", ["8"]], ["9", ["9"]], ["×", ["×"], "op"]],
+  [["ln", ["ln("], "fn", "eˣ", ["e", "^", "("]], ["4", ["4"]], ["5", ["5"]], ["6", ["6"]], ["−", ["−"], "op"]],
+  [["π", ["π"], "fn", "e", ["e"]], ["1", ["1"]], ["2", ["2"]], ["3", ["3"]], ["+", ["+"], "op"]],
+  [["@shift", "SHIFT", ""], ["0", ["0"]], [".", ["."]], ["(-)", ["neg"], "small"], ["=", "EQUALS", "op"]],
+];
+
+const keyEls = [];
+function buildKeypad() {
+  const kp = $("keypad");
+  KEYS.flat().forEach(def => {
+    const [label, action, cls = "", sLabel, sAction] = def;
+    const b = document.createElement("button");
+    b.className = "key " + cls + (sLabel ? " has-alt" : "");
+    b.innerHTML = label.startsWith("@") ? ICON[label.slice(1)] : `<span>${label}</span>`;
+    b.def = { label, action, sLabel, sAction };
+    kp.appendChild(b);
+    keyEls.push(b);
+    attachPress(b);
+  });
+}
+function relabel() {
+  document.body.classList.toggle("shifted", shift);
+  keyEls.forEach(b => {
+    const d = b.def;
+    if (d.action === "SHIFT") b.classList.toggle("shift-on", shift);
+    else if (d.sLabel) b.querySelector("span").textContent = shift ? d.sLabel : d.label;
+  });
+}
+
+function attachPress(b) {
+  let holdTimer = null, held = false;
+  b.addEventListener("pointerdown", e => {
+    e.preventDefault();
+    b.classList.add("down");
+    if (settings.haptic && navigator.vibrate) navigator.vibrate(6);
+    const isC = b.def.action === "BACK" && !shift;
+    if (isC) {            // C: tap = backspace, hold = clear line
+      held = false;
+      holdTimer = setTimeout(() => { held = true; clearLine(); renderLine(); }, 450);
+    } else {
+      press(b.def);
+    }
+  });
+  const up = () => {
+    b.classList.remove("down");
+    if (holdTimer) {
+      clearTimeout(holdTimer); holdTimer = null;
+      if (!held) { backspace(); renderLine(); }
+    }
+  };
+  b.addEventListener("pointerup", up);
+  b.addEventListener("pointerleave", up);
+  b.addEventListener("pointercancel", up);
+}
+
+function press(d) {
+  const action = shift && d.sAction ? d.sAction : d.action;
+  if (action === "SHIFT") { shift = !shift; relabel(); return; }
+  if (action === "SETTINGS") { openSettings(); return; }
+  if (action === "EQUALS") equals();
+  else if (action === "BACK") backspace();
+  else if (action === "CLEARALL") { clearHistory(); clearLine(); }
+  else insert(action);
+  if (shift) { shift = false; relabel(); }   // shift is one-shot
+  renderLine();
+}
+
+/* ---------- history taps ---------- */
+$("entries").addEventListener("click", e => {
+  const r = e.target.closest(".result"), x = e.target.closest(".expr");
+  if (r) { insertValue(Engine.toTokens(hist[r.dataset.i].result)); renderLine(); }
+  else if (x) { line = hist[x.dataset.i].tokens.slice(); renderLine(); }
+});
+
+/* ---------- physical keyboard (handy on desktop) ---------- */
+const KB = { "+": ["+"], "-": ["−"], "*": ["×"], "x": ["×"], "/": ["÷"], "^": ["^"], "(": ["("], ")": [")"], ".": ["."], ",": ["."], "p": ["π"], "s": ["sin("], "c": ["cos("], "t": ["tan("], "l": ["ln("], "r": ["√("] };
+document.addEventListener("keydown", e => {
+  if ($("settings").classList.contains("open") || e.ctrlKey || e.metaKey) return;
+  if (/^[0-9]$/.test(e.key)) insert([e.key]);
+  else if (KB[e.key]) insert(KB[e.key]);
+  else if (e.key === "Enter" || e.key === "=") { e.preventDefault(); equals(); }
+  else if (e.key === "Backspace") backspace();
+  else if (e.key === "Escape") clearLine();
+  else return;
+  renderLine();
+});
+
+/* ---------- settings ---------- */
+function openSettings() { try { window.history.pushState({ s: 1 }, ""); } catch {} $("settings").classList.add("open"); $("settings").setAttribute("aria-hidden", "false"); syncSettings(); }
+function closeSettings() { $("settings").classList.remove("open"); $("settings").setAttribute("aria-hidden", "true"); }
+function syncSettings() {
+  $("s-angle").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.v === settings.angle));
+  $("s-haptic").classList.toggle("on", settings.haptic);
+  renderMode();
+}
+function saveSettings() { store.set("calc.settings", settings); syncSettings(); renderLine(); }
+function clearHistory() { hist = []; store.set("calc.history", hist); renderEntries(); }
+
+$("s-done").onclick = () => { if (window.history.state && window.history.state.s) window.history.back(); else closeSettings(); };
+$("s-angle").onclick = e => { const v = e.target.dataset.v; if (v) { settings.angle = v; saveSettings(); } };
+$("s-haptic").onclick = () => { settings.haptic = !settings.haptic; saveSettings(); };
+$("s-clear").onclick = () => { if (confirm("Clear all history?")) { clearHistory(); $("s-done").click(); } };
+$("mode").onclick = () => { settings.angle = settings.angle === "deg" ? "rad" : "deg"; saveSettings(); };
+window.addEventListener("popstate", closeSettings);
+
+/* ---------- start ---------- */
+buildKeypad();
+renderEntries();
+renderMode();
+renderLine();
+
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+</script>
+</body>
+</html>
